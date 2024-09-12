@@ -1,4 +1,4 @@
-package com.example.linkup.collection;
+package com.example.linkup.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -12,9 +12,9 @@ import java.util.Date;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class Friends {
+public class RequestReceive {
 
+    private ObjectId receivedPersonId;
+    private Date receivedDate;
 
-    private ObjectId personId;
-    private Date date;
 }

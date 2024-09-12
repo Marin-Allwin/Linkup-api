@@ -1,21 +1,31 @@
 package com.example.linkup.service;
 
+import com.example.linkup.collection.Friends;
 import com.example.linkup.collection.Person;
+import com.example.linkup.collection.Posts;
 import com.example.linkup.exception.CustomException;
 import com.example.linkup.handler.PersonService;
+import com.example.linkup.handler.PostService;
+import com.example.linkup.model.RequestReceive;
+import com.example.linkup.model.RequestSent;
 import com.example.linkup.model.dto.College;
+import com.example.linkup.model.dto.SavedItems;
 import com.example.linkup.model.dto.School;
 import com.example.linkup.model.dto.Work;
 import com.example.linkup.model.request.*;
 import com.example.linkup.model.response.AllUserResponse;
+import com.example.linkup.model.response.PostResponse;
+import com.example.linkup.model.response.RefreshTokenResponse;
 import com.example.linkup.model.response.RegisterResponse;
 import com.example.linkup.repository.PersonRepository;
+import com.example.linkup.repository.PostRepository;
 import com.example.linkup.util.JwtService;
 import com.example.linkup.util.OtpService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.bson.types.ObjectId;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpHeaders;
@@ -30,11 +40,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.util.Base64;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
+//import static java.util.stream.Nodes.collect;
 
 @Service
 @RequiredArgsConstructor
@@ -45,9 +55,12 @@ public class PersonServiceImpl implements PersonService {
     private final AuthenticationManager authenticationManager;
     private final PasswordEncoder passwordEncoder;
     private final OtpService otpService;
+    private final PostService postService;
+    private final PostRepository postRepository;
 
     @Autowired
     private RedisTemplate<String, String> redisTemplate;
+
 
 
 
@@ -133,8 +146,14 @@ public class PersonServiceImpl implements PersonService {
             if(jwtService.isTokenValid(refreshToken, user)){
                 var accessToken = jwtService.generateAccessToken(user);
 
-                RegisterResponse authResponse = new RegisterResponse(user, accessToken,refreshToken);
-                new ObjectMapper().writeValue(response.getOutputStream(),authResponse);
+//                RegisterResponse authResponse = new RegisterResponse(user, accessToken,refreshToken);
+
+                var refeshResponse = RefreshTokenResponse.builder()
+                        .accessToken(accessToken)
+                        .refreshToken(refreshToken)
+                        .build();
+
+                new ObjectMapper().writeValue(response.getOutputStream(),refeshResponse);
             }
         }
     }
@@ -150,7 +169,7 @@ public class PersonServiceImpl implements PersonService {
             String otp = otpService.generateOtp();
             otpService.saveOtp(email, otp);
 
-            System.out.println(otp+ " for " +email);
+//            System.out.println(otp+ " for " +email);
 
             return ResponseEntity.ok("Account exists");
         } else {
@@ -185,11 +204,12 @@ public class PersonServiceImpl implements PersonService {
     @Override
     public ResponseEntity<Person> getPerson(String email) {
         try{
-            Optional<Person> personOptional = personRepository.findByEmail(email);
+            Optional<Person> personOptional = personRepository.findById(new ObjectId(email));
 
             if(personOptional.isPresent()){
 
                 Person person = personOptional.get();
+//                System.out.println(person);
 
                 if(person.getProfile() != null){
                     String base64Profile = Base64.getEncoder().encodeToString(person.getProfile());
@@ -207,7 +227,7 @@ public class PersonServiceImpl implements PersonService {
             }
         }catch (Exception e){
             e.printStackTrace();
-            System.out.println(e.getMessage());
+//            System.out.println(e.getMessage());
             throw new RuntimeException();
         }
     }
@@ -261,7 +281,9 @@ public class PersonServiceImpl implements PersonService {
     }
 
     @Override
-    public ResponseEntity<Person> updateDetails(Person request) {
+    public ResponseEntity<Person> updateDetails(PersonRequest request) {
+
+        System.out.println(request);
 
         Optional<Person> optionalPerson = personRepository.findByEmail(request.getEmail());
         String firstName = request.getFirstName();
@@ -273,6 +295,7 @@ public class PersonServiceImpl implements PersonService {
         String gender = request.getGender();
         String phone = request.getPhoneNumber();
         String bio = request.getBio();
+//        ObjectId personId = new ObjectId(String.valueOf(request.getPersonId()));
 
 //        LocalDate dob = LocalDate.parse(request.getDob(), DateTimeFormatter.ISO_DATE);
 
@@ -340,20 +363,494 @@ public class PersonServiceImpl implements PersonService {
         }
     }
 
+//    @Override
+//    public List<AllUserResponse> getAllUser(String email) {
+//
+//        Optional<Person> optionalPerson = personRepository.findByEmail(email);
+//        Person person = optionalPerson.get();
+//
+//        return personRepository.getAllUserDetail()
+//                .stream()
+//                .filter(p -> !p.getEmail().equals(email))
+//                .filter(p ->)
+//                .map(p -> AllUserResponse.builder()
+//                        .id(p.getPersonId())
+//                        .firstName(p.getFirstName())
+//                        .lastName(p.getLastName())
+//                        .email(p.getEmail())
+//                        .bio(p.getBio())
+//                        .profile(p.getProfile() != null ? Base64.getEncoder().encodeToString(p.getProfile()) : null)
+//                        .build())
+//                .collect(Collectors.toList());
+//    }
+
     @Override
     public List<AllUserResponse> getAllUser(String email) {
-        return personRepository.getAllUserDetail()
-                .stream()
-                .filter(p -> !p.getEmail().equals(email))
-                .map(p -> AllUserResponse.builder()
-                        .firstName(p.getFirstName())
-                        .lastName(p.getLastName())
-                        .email(p.getEmail())
-                        .bio(p.getBio())
-                        .profile(p.getProfile() != null ? Base64.getEncoder().encodeToString(p.getProfile()) : null)  // Convert byte[] to Base64 String
+        // Fetch the current user
+        Optional<Person> optionalPerson = personRepository.findByEmail(email);
+        if (optionalPerson.isEmpty()) {
+            throw new RuntimeException("User not found");
+        }
+
+        Person currentUser = optionalPerson.get();
+
+        List<Person> allUsers = personRepository.getAllUserDetail();
+
+        List<ObjectId> friendsList = currentUser.getFriendsList() != null ?
+                currentUser.getFriendsList().stream().map(Friends::getPersonId).collect(Collectors.toList()) :
+                Collections.emptyList();
+        List<ObjectId> sentRequests = currentUser.getSent() != null ?
+                currentUser.getSent().stream().map(RequestSent::getSentPersonId).collect(Collectors.toList()) :
+                Collections.emptyList();
+        List<ObjectId> receivedRequests = currentUser.getReceived() != null ?
+                currentUser.getReceived().stream().map(RequestReceive::getReceivedPersonId).collect(Collectors.toList()) :
+                Collections.emptyList();
+
+        return allUsers.stream()
+                .filter(user -> !user.getEmail().equals(email))
+                .filter(user -> friendsList.isEmpty() || !friendsList.contains(user.getPersonId()))
+//                .filter(user -> sentRequests.isEmpty() || !sentRequests.contains(user.getPersonId()))
+                .filter(user -> receivedRequests.isEmpty() || !receivedRequests.contains(user.getPersonId()))
+                .map(user -> AllUserResponse.builder()
+                        .personId(String.valueOf(user.getPersonId()))
+                        .firstName(user.getFirstName())
+                        .lastName(user.getLastName())
+                        .email(user.getEmail())
+                        .bio(user.getBio())
+                        .profile(user.getProfile() != null ? Base64.getEncoder().encodeToString(user.getProfile()) : null)
+                        .friendshipStatus(sentRequests.stream().anyMatch(id -> id.equals(user.getPersonId()))? "sent" : null)
                         .build())
                 .collect(Collectors.toList());
     }
+
+//    @Override
+//    public ResponseEntity<Posts> addNewPost(NewPostRequest request) throws IOException {
+//
+//        Optional<Person> optionalPerson = personRepository.findByEmail(request.getEmail());
+//        if (optionalPerson.isPresent()) {
+//            ObjectId id = optionalPerson.get().getPersonId();
+//            Posts posts = new Posts();
+//            posts.setContent(request.getContent());
+//            posts.setPersonId(id);
+//            posts.setPostTime(new Date());
+//
+//            if(request.getPostImage() != null) {
+//                posts.setPostImage(request.getPostImage().getBytes());
+//            }
+//            postRepository.save(posts);
+//            return ResponseEntity.ok(posts);
+//        } else {
+//            return null;
+//        }
+//    }
+
+
+    @Override
+    public ResponseEntity<Posts> addNewPost(NewPostRequest request) throws IOException {
+        Optional<Person> optionalPerson = personRepository.findByEmail(request.getEmail());
+
+        if (optionalPerson.isPresent()) {
+            ObjectId id = optionalPerson.get().getPersonId();
+            Posts posts = new Posts();
+            posts.setContent(request.getContent());
+            posts.setPersonId(id);
+            posts.setPostTime(new Date());
+
+            if(request.getPostImage() != null) {
+                posts.setPostImage(request.getPostImage().getBytes());
+            }
+
+            postRepository.save(posts);
+            return ResponseEntity.ok(posts);
+        } else {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null); // Return 404 if user not found
+        }
+    }
+
+
+    @Override
+    public ResponseEntity<String> sentFriendRequest(String from, String toPerson) {
+        Optional<Person> byId = personRepository.findByEmail(from);
+        Optional<Person> byId1 = personRepository.findByEmail(toPerson);
+
+        try{
+            if(byId.isPresent()) {
+                Person person =byId.get();
+                RequestSent sent = RequestSent.builder()
+                        .sentPersonId(byId1.get().getPersonId())
+                        .sentDate(new Date())
+                        .build();
+
+                List<RequestSent> sentRequests = person.getSent();
+                if (sentRequests == null) {
+                    sentRequests = new ArrayList<>();
+                }
+                sentRequests.add(sent);
+                person.setSent(sentRequests);
+                personRepository.save(person);
+
+                Person person1 = byId1.get();
+//                System.out.println(person1.getFirstName());
+                RequestReceive received = RequestReceive.builder()
+                        .receivedPersonId(person.getPersonId())
+                        .receivedDate(new Date())
+                        .build();
+
+                List<RequestReceive> receivedRequest = person1.getReceived();
+                if (receivedRequest == null) {
+                    receivedRequest = new ArrayList<>();
+                }
+                receivedRequest.add(received);
+                person1.setReceived(receivedRequest);
+                personRepository.save(person1);
+
+                return ResponseEntity.ok("Request sent successfully");
+            }
+            else{
+                throw new RuntimeException("One or both users not found");
+            }
+        }catch (Exception e){
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to send friend request: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public ResponseEntity<List<AllUserResponse>> getAllReceivedRequet(String email) {
+
+        Optional<Person> optionalPerson = personRepository.findByEmail(email);
+        Optional<Person> optionalPerson1;
+        try{
+
+            if(optionalPerson.isPresent()){
+
+                List<RequestReceive> received1 = optionalPerson.get().getReceived();
+                if (received1 == null) {
+                    return  null;
+                }
+                List<AllUserResponse> list = received1.stream()
+                        .map(r -> {
+                            Optional<Person> optionalPerson2 = personRepository.findById(r.getReceivedPersonId());
+                            if (optionalPerson2.isPresent()) {
+                                Person receivedPerson = optionalPerson2.get();
+                                return AllUserResponse.builder()
+                                        .personId(String.valueOf(receivedPerson.getPersonId()))
+                                        .firstName(receivedPerson.getFirstName())
+                                        .lastName(receivedPerson.getLastName())
+                                        .bio(receivedPerson.getBio())
+                                        .email(receivedPerson.getEmail())
+                                        .profile(receivedPerson.getProfile() != null ? Base64.getEncoder().encodeToString(receivedPerson.getProfile()) : null)
+                                        .build();
+                            } else {
+                                return null;
+                            }
+                        })
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList());
+
+                return ResponseEntity.ok(list);
+            } else{
+                throw new RuntimeException();
+            }
+        }catch (Exception e) {
+            throw new RuntimeException();
+        }
+    }
+
+    @Override
+    public ResponseEntity<String> deleteSendRequest(String from, String toPerson) {
+
+        Optional<Person> byEmail = personRepository.findByEmail(from);
+        Optional<Person> byEmail1 = personRepository.findByEmail(toPerson);
+
+        try{
+            if(byEmail.isPresent() && byEmail1.isPresent()){
+                Person person = byEmail.get();
+                Person person1 = byEmail1.get();
+
+                person.setSent(person.getSent().stream()
+                        .filter(p -> !p.getSentPersonId().equals(person1.getPersonId()))
+                        .collect(Collectors.toList())
+                );
+                personRepository.save(person);
+
+                person1.setReceived(person1.getReceived().stream()
+                        .filter(p -> !p.getReceivedPersonId().equals(person.getPersonId()))
+                        .collect(Collectors.toList())
+                );
+                personRepository.save(person1);
+
+
+            }
+            return ResponseEntity.ok("Sent Request Canceled");
+        } catch (Exception e){
+            throw new RuntimeException();
+        }
+    }
+
+    @Override
+    public ResponseEntity<String> acceptFriendRequest(String user, String from) {
+
+        Optional<Person> optionalPerson = personRepository.findByEmail(user);
+        Optional<Person> optionalPerson1 = personRepository.findByEmail(from);
+
+       try{
+            if (optionalPerson.isPresent() && optionalPerson1.isPresent()) {
+                Person person = optionalPerson.get();
+                Person person1 = optionalPerson1.get();
+
+                Friends friendsForPerson = Friends.builder()
+                        .personId(person1.getPersonId())
+                        .date(new Date())
+                        .build();
+
+                List<Friends> personFriendsList = person.getFriendsList();
+                if (personFriendsList == null) {
+                    personFriendsList = new ArrayList<>();
+                }
+                personFriendsList.add(friendsForPerson);
+                person.setFriendsList(personFriendsList);
+
+                List<RequestReceive> requestReceives = person.getReceived().stream().filter(r->!person1.getPersonId().equals(r.getReceivedPersonId())).collect(Collectors.toList());
+                person.setReceived(requestReceives);
+
+                personRepository.save(person);
+
+
+                Friends friendsForPerson1 = Friends.builder()
+                        .personId(person.getPersonId())
+                        .date(new Date())
+                        .build();
+
+                List<Friends> person1FriendsList = person1.getFriendsList();
+                if (person1FriendsList == null) {
+                    person1FriendsList = new ArrayList<>();
+                }
+                person1FriendsList.add(friendsForPerson1);
+                person1.setFriendsList(person1FriendsList);
+
+                List<RequestSent> sents = person1.getSent().stream().filter(s-> !person.getPersonId().equals(s.getSentPersonId())).collect(Collectors.toList());
+                person1.setSent(sents);
+                personRepository.save(person1);
+            }
+
+            return ResponseEntity.ok("Request Accepted both are friends now");
+        }catch (Exception e){
+           return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to accept friend request: " + e.getMessage());
+       }
+    }
+
+    @Override
+    public ResponseEntity<List<AllUserResponse>> getMyFriends(String email) {
+        try {
+            Optional<Person> optionalPerson = personRepository.findByEmail(email);
+
+            if (optionalPerson.isPresent()) {
+                Person person = optionalPerson.get();
+                List<Friends> friendsList = person.getFriendsList();
+
+                if (friendsList == null || friendsList.isEmpty()) {
+                    return ResponseEntity.ok(Collections.emptyList());
+                }
+
+                List<AllUserResponse> list = friendsList.stream()
+                        .map(r -> {
+                            Optional<Person> optionalPerson2 = personRepository.findById(r.getPersonId());
+                            if (optionalPerson2.isPresent()) {
+                                Person friend = optionalPerson2.get();
+                                return AllUserResponse.builder()
+                                        .personId(String.valueOf(friend.getPersonId()))
+                                        .firstName(friend.getFirstName())
+                                        .lastName(friend.getLastName())
+                                        .bio(friend.getBio())
+                                        .email(friend.getEmail())
+                                        .profile(friend.getProfile() != null ? Base64.getEncoder().encodeToString(friend.getProfile()) : null)
+                                        .build();
+                            } else {
+                                return null;
+                            }
+                        })
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList());
+
+                return ResponseEntity.ok(list);
+            } else {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(null);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(null);
+        }
+    }
+
+    @Override
+    public PostResponse websocketPostResponse(ResponseEntity<Posts> post) throws IOException {
+        Optional<Person> optionalPerson = personRepository.findById(post.getBody().getPersonId());
+
+        if(optionalPerson.isPresent()) {
+            Person person = optionalPerson.get();
+
+            PostResponse postResponse = new PostResponse();
+            postResponse.setPersonId(person.getPersonId());
+            postResponse.setFirstName(person.getFirstName());
+            postResponse.setLastName(person.getLastName());
+            postResponse.setContent(post.getBody().getContent());
+            postResponse.setPostTime(post.getBody().getPostTime());
+            postResponse.setEmail(person.getEmail());
+            postResponse.setPostId(post.getBody().getPostId());
+
+
+            try{
+                if (post.getBody().getPostImage() != null && post.getBody().getPostImage().length > 0) {
+                    postResponse.setImage(Base64.getEncoder().encodeToString(post.getBody().getPostImage()));
+                } else {
+                    postResponse.setImage(null);
+                }
+            }catch (Exception e) {
+                System.out.println(e.getMessage());
+            }
+
+            if (person.getProfile() != null && person.getProfile().length > 0) {
+                postResponse.setProfile(Base64.getEncoder().encodeToString(person.getProfile()));
+            }else {
+                postResponse.setProfile(null);
+            }
+
+//            System.out.println(postResponse);
+            return postResponse;
+
+
+        }else {
+            return null;
+        }
+    }
+
+    @Override
+    public SavedItems getSavedpostList(String personID, String postId) {
+        Person person = personRepository.findById(new ObjectId(personID)).orElseThrow(() -> new RuntimeException());
+        List<SavedItems> saved = person.getSaved();
+        if(saved != null) {
+            SavedItems collect = saved.stream()
+                    .filter(s -> s.getPostId().equals(new ObjectId(postId))).findFirst().orElseThrow(()-> new CustomException("not found", HttpStatus.NOT_FOUND));
+            System.out.println("WERTYUI"+collect);
+            return collect;
+        }else{
+            throw new RuntimeException();
+        }
+
+
+    }
+
+    @Override
+    public List<AllUserResponse> getFewFriends(String personId) {
+        try{
+            Person person = personRepository.findById(new ObjectId(personId)).orElseThrow(()-> new RuntimeException());
+
+            List<Friends> list= person.getFriendsList();
+            List<AllUserResponse> allUserResponses = new ArrayList<>();
+
+            if(list == null) {
+                return allUserResponses;
+            }else{
+                Collections.shuffle(list);
+                allUserResponses = list.stream().limit(3).map(r -> {
+                    Optional<Person> optionalPerson2 = personRepository.findById(r.getPersonId());
+                        Person friend = optionalPerson2.get();
+                        return AllUserResponse.builder()
+                                .personId(String.valueOf(friend.getPersonId()))
+                                .firstName(friend.getFirstName())
+                                .lastName(friend.getLastName())
+                                .bio(friend.getBio())
+                                .email(friend.getEmail())
+                                .profile(friend.getProfile() != null ? Base64.getEncoder().encodeToString(friend.getProfile()) : null)
+                                .build();
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+            }
+            return allUserResponses;
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public List<AllUserResponse> getSuggession(String personId) {
+
+        Person person = personRepository.findById(new ObjectId(personId)).orElseThrow(()-> new RuntimeException());
+
+        List<ObjectId> friendsList = person.getFriendsList()
+                .stream().map(Friends::getPersonId).collect(Collectors.toList());
+
+        List<ObjectId> allPersonList = personRepository.findAll()
+                .stream().map(Person::getPersonId)
+                .filter(p-> !new ObjectId(personId).equals(p)).collect(Collectors.toList());
+
+        List<ObjectId> suggestedIds = allPersonList
+                .stream().filter(p-> !friendsList.contains(p)).collect(Collectors.toList());
+        List<AllUserResponse> responses = new ArrayList<>();
+
+        if(friendsList == null){
+            return responses;
+        }else{
+            Collections.shuffle(suggestedIds);
+            responses = suggestedIds.stream().limit(3).map(r -> {
+                        Optional<Person> optionalPerson2 = personRepository.findById(r);
+                        Person friend = optionalPerson2.get();
+                        return AllUserResponse.builder()
+                                .personId(String.valueOf(friend.getPersonId()))
+                                .firstName(friend.getFirstName())
+                                .lastName(friend.getLastName())
+                                .bio(friend.getBio())
+                                .email(friend.getEmail())
+                                .profile(friend.getProfile() != null ? Base64.getEncoder().encodeToString(friend.getProfile()) : null)
+                                .build();
+                    })
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+        }
+        return responses;
+    }
+
+    @Override
+    public ResponseEntity<String> declineRequest(String user, String who) {
+        try{
+            Optional<Person> optionalPerson1 = personRepository.findByEmail(user);
+            Optional<Person> optionalPerson2 = personRepository.findByEmail(who);
+
+            if(optionalPerson1.isPresent() && optionalPerson2.isPresent()){
+                Person person1 = optionalPerson1.get();
+                Person person2 = optionalPerson2.get();
+
+                person1.setReceived(person1.getReceived().stream()
+                        .filter(p-> !p.getReceivedPersonId().equals(person2.getPersonId()))
+                        .collect(Collectors.toList()));
+
+                personRepository.save(person1);
+
+                person2.setSent(person2.getSent().stream()
+                        .filter(p-> !p.getSentPersonId().equals(person1.getPersonId()))
+                        .collect(Collectors.toList()));
+
+                personRepository.save(person2);
+                System.out.println("everything working finr");
+            }
+            else {
+                System.out.println("some error");
+                throw new RuntimeException();
+            }
+
+            return ResponseEntity.ok("Request declined successfully");
+
+        }catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+        }
+    }
+
 
     private void removeAccessToken(String email) {
         redisTemplate.delete(email);

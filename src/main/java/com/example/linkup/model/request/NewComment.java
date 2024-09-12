@@ -1,7 +1,6 @@
-package com.example.linkup.collection;
+package com.example.linkup.model.request;
 
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.bson.types.ObjectId;
@@ -9,12 +8,12 @@ import org.bson.types.ObjectId;
 import java.util.Date;
 
 @Data
-@Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class Friends {
+public class NewComment {
 
-
-    private ObjectId personId;
-    private Date date;
+    private String postId;
+    private String personId;
+    private String comment;
+    private Date commentDate;
 }

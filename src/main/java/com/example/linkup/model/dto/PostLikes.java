@@ -1,4 +1,4 @@
-package com.example.linkup.collection;
+package com.example.linkup.model.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -9,12 +9,13 @@ import org.bson.types.ObjectId;
 import java.util.Date;
 
 @Data
-@Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class Friends {
-
+@Builder
+public class PostLikes {
 
     private ObjectId personId;
-    private Date date;
+    private ObjectId postId;
+    private Date likedDate;
+
 }

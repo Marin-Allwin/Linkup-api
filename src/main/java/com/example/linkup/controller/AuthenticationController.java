@@ -36,9 +36,16 @@ public class AuthenticationController {
         return personService.loginUser(loginRequest);
     }
 
-    @PostMapping("/refresh-token")
+    @GetMapping("/refresh-token")
     public void refreshToken(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        personService.refreshToken(request, response);
+//        personService.refreshToken(request, response);
+        try {
+            personService.refreshToken(request, response);
+        } catch (Exception e) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write("Error refreshing token: " + e.getMessage());
+            System.out.println(e);
+        }
     }
 
     @PostMapping("/find-account")

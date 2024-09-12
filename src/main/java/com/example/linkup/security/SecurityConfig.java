@@ -27,7 +27,8 @@ public class SecurityConfig {
                 "/v3/api-docs/**",
                 "v3/api-docs.yaml",
                 "/swagger-ui/**",
-                "/swagger-ui.html"
+                "/swagger-ui.html",
+                "/ws/**"
         };
 
         String[] AuthController = {
@@ -39,13 +40,12 @@ public class SecurityConfig {
                 "/linkup/change-password"
         };
 
-       
+
         http
                 .csrf(csrf -> csrf.disable())
                 .authorizeRequests(authorizeRequests -> authorizeRequests
                                 .requestMatchers(AUTH_DOC_LIST).permitAll()
                                 .requestMatchers(AuthController).permitAll()
-                                .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider)
